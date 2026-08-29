@@ -1,0 +1,201 @@
+// Prisma schema for Shahnameh Tales
+// Run `npx prisma generate` after any change to this file
+// Run `npx prisma migrate dev --name init` to create the database tables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  avatarUrl    String?
+  bio          String?
+  role         Role     @default(READER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  comments         Comment[]
+  likes            Like[]
+  achievements     UserAchievement[]
+  readingProgress  ReadingProgress[]
+
+  @@map("users")
+}
+
+enum Role {
+  READER
+  ADMIN
+}
+
+// ─────────────────────────────────────────────
+// STORIES & EPISODES
+// A Story is a saga (e.g. "Rostam and Sohrab").
+// Each Story has multiple Episodes (chapters), released in order.
+// ─────────────────────────────────────────────
+
+model Story {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String
+  coverImage  String?
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  episodes Episode[]
+
+  @@map("stories")
+}
+
+model Episode {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  content     String // rich text / markdown body of the episode
+  excerpt     String?
+  coverImage  String?
+  orderIndex  Int // position of this episode within its story (1, 2, 3, ...)
+  published   Boolean  @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  storyId String
+
+  comments        Comment[]
+  likes           Like[]
+  readingProgress ReadingProgress[]
+
+  @@unique([storyId, orderIndex])
+  @@index([storyId])
+  @@map("episodes")
+}
+
+// Tracks which episodes a user has read, for future "continue reading" /
+// achievement features (e.g. "finished your first saga").
+model ReadingProgress {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  episode   Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episodeId String
+  readAt    DateTime @default(now())
+
+  @@unique([userId, episodeId])
+  @@map("reading_progress")
+}
+
+// ─────────────────────────────────────────────
+// LIKES & COMMENTS
+// ─────────────────────────────────────────────
+
+model Like {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  episode   Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episodeId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, episodeId]) // one like per user per episode
+  @@index([episodeId])
+  @@map("likes")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  episode   Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episodeId String
+
+  // self-relation for reply threads (future-proofing)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId  String?
+  replies   Comment[] @relation("CommentReplies")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([episodeId])
+  @@index([userId])
+  @@map("comments")
+}
+
+// ─────────────────────────────────────────────
+// ACHIEVEMENTS
+// Admin defines Achievements; users unlock them via UserAchievement.
+// The actual "when does a user earn X" logic lives in app code, but the
+// schema is ready now so you can plug in achievements later without
+// another migration.
+// ─────────────────────────────────────────────
+
+model Achievement {
+  id          String   @id @default(cuid())
+  key         String   @unique // stable machine identifier, e.g. "first_comment"
+  title       String
+  description String
+  icon        String? // icon name or image URL
+  createdAt   DateTime @default(now())
+
+  users UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  achievementId String
+  unlockedAt    DateTime    @default(now())
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// ─────────────────────────────────────────────
+// SITE SETTINGS (e.g. the donation link)
+// A single-row key/value style table so the admin can change things like
+// the donate URL without a code deploy.
+// ─────────────────────────────────────────────
+
+model SiteSetting {
+  key   String @id
+  value String
+
+  @@map("site_settings")
+}
+
+// ─────────────────────────────────────────────
+// CONTACT MESSAGES
+// Submissions from the "Contact Us" page, reviewable by an admin later.
+// ─────────────────────────────────────────────
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("contact_messages")
+}

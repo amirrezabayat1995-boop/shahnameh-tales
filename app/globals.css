@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: #1b2a4a;       /* deep lapis - primary background */
+  --color-ink-deep: #131f38;  /* darker panel background */
+  --color-parchment: #ede3cc; /* aged parchment - card surfaces */
+  --color-ivory: #f7f2e7;     /* body text on dark backgrounds */
+  --color-gold: #b8892b;      /* gilding accent */
+  --color-gold-bright: #d7ab4f;
+  --color-vermillion: #9e3b2e;/* secondary accent - likes, active */
+  --color-line: rgba(184, 137, 43, 0.25);
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-ink-deep: var(--color-ink-deep);
+  --color-parchment: var(--color-parchment);
+  --color-ivory: var(--color-ivory);
+  --color-gold: var(--color-gold);
+  --color-gold-bright: var(--color-gold-bright);
+  --color-vermillion: var(--color-vermillion);
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-source-serif);
+  --font-ui: var(--font-inter);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-ivory);
+  font-family: var(--font-body), Georgia, serif;
+}
+
+/* Signature divider: a thin gold rule with a small lozenge, evoking
+   manuscript page dividers. Used sparingly at section breaks. */
+.manuscript-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-gold);
+}
+.manuscript-divider::before,
+.manuscript-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--color-line);
+}
+.manuscript-divider .lozenge {
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  background: var(--color-gold);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fade-in-up {
+    animation: fadeInUp 0.6s ease-out both;
+  }
+}
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Visible keyboard focus, always */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-gold-bright);
+  outline-offset: 2px;
+}
