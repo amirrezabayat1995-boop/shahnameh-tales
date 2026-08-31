@@ -199,3 +199,35 @@ model ContactMessage {
 
   @@map("contact_messages")
 }
+
+// ─────────────────────────────────────────────
+// GLOSSARY
+// Wikipedia-style inline glossary terms. Episode content marks a term with
+// [[Term]] (or [[Term|Display Text]] for a custom display), and EpisodeBody
+// resolves it against this table by matching `term` case-insensitively.
+// Admin manages these from /admin/glossary.
+// ─────────────────────────────────────────────
+
+model GlossaryTerm {
+  id         String       @id @default(cuid())
+  // The canonical key used for matching [[Term]] markup, case-insensitive.
+  // Stored lowercase-trimmed at write time so lookups are a simple equality
+  // check instead of a runtime case-fold on every render.
+  term       String       @unique
+  // Display title shown as the popup heading (keeps original casing, e.g. "Rostam").
+  title      String
+  definition String
+  type       GlossaryType @default(TERM)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@map("glossary_terms")
+}
+
+enum GlossaryType {
+  CHARACTER
+  PLACE
+  TERM
+
+  @@map("glossary_type")
+}

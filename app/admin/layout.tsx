@@ -30,6 +30,12 @@ export default async function AdminLayout({
             Stories & Episodes
           </Link>
           <Link
+            href="/admin/glossary"
+            className="text-[var(--color-ivory)]/80 hover:text-[var(--color-gold-bright)]"
+          >
+            Glossary
+          </Link>
+          <Link
             href="/admin/settings"
             className="text-[var(--color-ivory)]/80 hover:text-[var(--color-gold-bright)]"
           >

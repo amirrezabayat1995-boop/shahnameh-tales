@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { storySchema, episodeSchema } from "@/lib/validation";
+import { storySchema, episodeSchema, glossaryTermSchema } from "@/lib/validation";
 import { revalidatePath } from "next/cache";
 
 export interface ActionResult {
@@ -237,6 +237,108 @@ export async function updateSiteSettingAction(
 
   revalidatePath("/donate");
   revalidatePath("/admin/settings");
+
+  return { success: true };
+}
+
+// ── Glossary Terms ─────────────────────────────────────────
+
+export async function createGlossaryTermAction(formData: FormData): Promise<ActionResult> {
+  const session = await requireAdmin();
+  if (!session) return { success: false, error: "Admin access required" };
+
+  const raw = {
+    term: formData.get("term"),
+    title: formData.get("title"),
+    definition: formData.get("definition"),
+    type: formData.get("type") || "TERM",
+  };
+
+  const parsed = glossaryTermSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0].message };
+  }
+
+  // Normalize the matching key: lowercase + trimmed, so [[Rostam]] and
+  // [[rostam]] both resolve to the same term regardless of how the admin
+  // typed it in.
+  const normalizedTerm = parsed.data.term.trim().toLowerCase();
+
+  const existing = await prisma.glossaryTerm.findUnique({
+    where: { term: normalizedTerm },
+  });
+  if (existing) {
+    return { success: false, error: "A glossary term with that key already exists" };
+  }
+
+  await prisma.glossaryTerm.create({
+    data: {
+      term: normalizedTerm,
+      title: parsed.data.title,
+      definition: parsed.data.definition,
+      type: parsed.data.type,
+    },
+  });
+
+  revalidatePath("/admin/glossary");
+  // Glossary terms are read on every episode page, so bust those too.
+  revalidatePath("/episodes/[slug]", "page");
+
+  return { success: true };
+}
+
+export async function updateGlossaryTermAction(
+  glossaryTermId: string,
+  formData: FormData
+): Promise<ActionResult> {
+  const session = await requireAdmin();
+  if (!session) return { success: false, error: "Admin access required" };
+
+  const raw = {
+    term: formData.get("term"),
+    title: formData.get("title"),
+    definition: formData.get("definition"),
+    type: formData.get("type") || "TERM",
+  };
+
+  const parsed = glossaryTermSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0].message };
+  }
+
+  const normalizedTerm = parsed.data.term.trim().toLowerCase();
+
+  const conflict = await prisma.glossaryTerm.findFirst({
+    where: { term: normalizedTerm, NOT: { id: glossaryTermId } },
+  });
+  if (conflict) {
+    return { success: false, error: "A glossary term with that key already exists" };
+  }
+
+  await prisma.glossaryTerm.update({
+    where: { id: glossaryTermId },
+    data: {
+      term: normalizedTerm,
+      title: parsed.data.title,
+      definition: parsed.data.definition,
+      type: parsed.data.type,
+    },
+  });
+
+  revalidatePath("/admin/glossary");
+  revalidatePath("/episodes/[slug]", "page");
+
+  return { success: true };
+}
+
+export async function deleteGlossaryTermAction(glossaryTermId: string): Promise<ActionResult> {
+  const session = await requireAdmin();
+  if (!session) return { success: false, error: "Admin access required" };
+
+  await prisma.glossaryTerm.delete({ where: { id: glossaryTermId } });
+
+  revalidatePath("/admin/glossary");
+  revalidatePath("/episodes/[slug]", "page");
 
   return { success: true };
 }

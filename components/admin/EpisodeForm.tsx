@@ -7,6 +7,7 @@ import {
   updateEpisodeAction,
   deleteEpisodeAction,
 } from "@/app/actions/admin";
+import PasteFormattedContent from "@/components/admin/PasteFormattedContent";
 
 interface EpisodeFormProps {
   storyId: string;
@@ -23,11 +24,7 @@ interface EpisodeFormProps {
   };
 }
 
-export default function EpisodeForm({
-  storyId,
-  nextOrderIndex,
-  episode,
-}: EpisodeFormProps) {
+export default function EpisodeForm({ storyId, nextOrderIndex, episode }: EpisodeFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isDeleting, startDeleteTransition] = useTransition();
@@ -88,18 +85,14 @@ export default function EpisodeForm({
         defaultValue={episode?.coverImage ?? ""}
         type="url"
       />
+
       <label className="flex flex-col gap-1.5">
         <span className="font-[family-name:var(--font-ui)] text-sm text-[var(--color-ivory)]/80">
-          Content (separate paragraphs with a blank line)
+          Content
         </span>
-        <textarea
-          name="content"
-          defaultValue={episode?.content}
-          required
-          rows={16}
-          className="resize-y rounded-sm border border-[var(--color-line)] bg-[var(--color-ink-deep)] px-4 py-2.5 font-[family-name:var(--font-body)] text-[var(--color-ivory)] focus:border-[var(--color-gold)] focus:outline-none"
-        />
+        <PasteFormattedContent name="content" initialContent={episode?.content} />
       </label>
+
       <label className="flex items-center gap-2">
         <input
           type="checkbox"
@@ -167,6 +160,7 @@ function Field({
         defaultValue={defaultValue}
         required={required}
         pattern={pattern}
+        suppressHydrationWarning
         className="rounded-sm border border-[var(--color-line)] bg-[var(--color-ink-deep)] px-4 py-2.5 font-[family-name:var(--font-body)] text-[var(--color-ivory)] focus:border-[var(--color-gold)] focus:outline-none"
       />
     </label>

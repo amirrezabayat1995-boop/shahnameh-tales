@@ -101,3 +101,30 @@ export async function getSiteSetting(key: string): Promise<string | null> {
   const setting = await prisma.siteSetting.findUnique({ where: { key } });
   return setting?.value ?? null;
 }
+
+// ── Glossary ───────────────────────────────────────────────
+
+export interface GlossaryTermLookup {
+  term: string; // normalized lowercase key
+  title: string;
+  definition: string;
+  type: "CHARACTER" | "PLACE" | "TERM";
+}
+
+// Returns all glossary terms as a lookup map keyed by the normalized term,
+// so EpisodeBody can resolve [[Term]] markup in O(1) per match instead of
+// querying per-term while rendering.
+export async function getGlossaryLookup(): Promise<Record<string, GlossaryTermLookup>> {
+  const terms = await prisma.glossaryTerm.findMany({
+    select: { term: true, title: true, definition: true, type: true },
+  });
+
+  return Object.fromEntries(terms.map((t) => [t.term, t]));
+}
+
+// For the admin list page.
+export async function getAllGlossaryTerms() {
+  return prisma.glossaryTerm.findMany({
+    orderBy: { title: "asc" },
+  });
+}

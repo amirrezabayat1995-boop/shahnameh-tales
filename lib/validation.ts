@@ -61,3 +61,23 @@ export const episodeSchema = z.object({
   storyId: z.string().min(1),
   published: z.boolean().optional(),
 });
+
+export const glossaryTermSchema = z.object({
+  // The [[term]] key as it will appear in episode markup, e.g. "Rostam".
+  // Normalized to lowercase+trimmed before matching, so the admin can type
+  // it with normal casing.
+  term: z
+    .string()
+    .min(1, "Term is required")
+    .max(100, "Term is too long")
+    .regex(
+      /^[a-zA-Z0-9 '’-]+$/,
+      "Term can only contain letters, numbers, spaces, hyphens, and apostrophes"
+    ),
+  title: z.string().min(1, "Title is required").max(100, "Title is too long"),
+  definition: z
+    .string()
+    .min(1, "Definition is required")
+    .max(1000, "Definition is too long (max 1000 characters)"),
+  type: z.enum(["CHARACTER", "PLACE", "TERM"]).default("TERM"),
+});

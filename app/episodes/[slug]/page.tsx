@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEpisodeBySlug, getAdjacentEpisodes } from "@/lib/data";
+import { getEpisodeBySlug, getAdjacentEpisodes, getGlossaryLookup } from "@/lib/data";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import LikeButton from "@/components/LikeButton";
 import CommentForm from "@/components/CommentForm";
 import CommentList from "@/components/CommentList";
+import EpisodeBody from "@/components/EpisodeBody";
 
 export async function generateMetadata({
   params,
@@ -38,6 +39,11 @@ export default async function EpisodePage({
     episode.storyId,
     episode.orderIndex
   );
+
+  // Glossary lookup for [[Term]] markup inside the episode body. Fetched
+  // per-request rather than cached in-memory since admin edits should show
+  // up immediately (revalidatePath already covers this route on write).
+  const glossary = await getGlossaryLookup();
 
   let initiallyLiked = false;
   if (session) {
@@ -81,12 +87,11 @@ export default async function EpisodePage({
 
       <section className="mx-auto max-w-3xl px-6 py-14">
         {/* Story body. Content is stored as plain paragraphs separated by
-            blank lines; swap this for a markdown renderer later if desired. */}
-        <div className="flex flex-col gap-5 font-[family-name:var(--font-body)] text-lg leading-relaxed text-[var(--color-ivory)]/90">
-          {episode.content.split(/\n\s*\n/).map((paragraph, i) => (
-            <p key={i}>{paragraph}</p>
-          ))}
-        </div>
+            blank lines. EpisodeBody centers scene description, auto-detects
+            screenplay-style dialogue (a short standalone line = character
+            name, followed paragraph = their dialogue), and resolves
+            [[Term]] markup into glossary popups. */}
+        <EpisodeBody content={episode.content} glossary={glossary} />
 
         <div className="mt-10 flex items-center gap-4">
           <LikeButton
