@@ -9,28 +9,103 @@ interface PasteFormattedContentProps {
 
 const ALLOWED_TAGS = new Set(["P", "STRONG", "B", "EM", "I", "U", "SPAN", "BR", "DIV"]);
 
+// Word's own baseline body color is near-black. Anything within this
+// tolerance of pure black is treated as "no color set" rather than an
+// intentional choice, so the site's default (ivory) text color applies
+// instead of overriding it with black-on-lapis.
+function isEffectivelyDefaultBlack(rgb: string): boolean {
+  const match = rgb.match(/\d+/g);
+  if (!match) return true;
+  const [r, g, b] = match.map(Number);
+  // Word's default text is usually exactly rgb(0,0,0) or very close to it
+  // (e.g. windowtext resolves to 0,0,0). A small tolerance covers rounding.
+  return r <= 20 && g <= 20 && b <= 20;
+}
+
+const ALIGN_VALUES = new Set(["left", "right", "center", "justify"]);
+
+/**
+ * Reads text-align the way it was *actually authored*, not just whatever
+ * the browser's computed style resolves to (which is always some value,
+ * defaulting to "left" even when nothing was ever set). We only trust:
+ *   1. An inline style directly on the element (style="text-align: ...")
+ *   2. A CSS rule from Word's own <style> block that explicitly targets
+ *      this element's class and sets text-align (e.g. p.MsoNormal)
+ * If neither exists, we return null and no alignment is carried over —
+ * letting the page's own default (or dir-based default) apply.
+ */
+function getExplicitTextAlign(
+  el: HTMLElement,
+  iframeDoc: Document
+): string | null {
+  // 1. Inline style always wins and is unambiguous.
+  const inline = el.style.textAlign;
+  if (inline && ALIGN_VALUES.has(inline)) return inline;
+
+  // 2. Look for a matching rule in the document's stylesheets that
+  // explicitly declares text-align for a class this element has.
+  const classList = Array.from(el.classList);
+  if (classList.length === 0) return null;
+
+  try {
+    for (const sheet of Array.from(iframeDoc.styleSheets)) {
+      let rules: CSSRuleList;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue; // cross-origin or inaccessible stylesheet
+      }
+      for (const rule of Array.from(rules)) {
+        if (!(rule instanceof CSSStyleRule)) continue;
+        const align = rule.style.textAlign;
+        if (!align || !ALIGN_VALUES.has(align)) continue;
+        // Does this rule's selector match one of the element's classes?
+        // Word style rules are typically simple, e.g. "p.MsoNormal" or
+        // ".MsoNormal" — checking selectorText for the class name is
+        // reliable enough for Word's own clipboard output.
+        const matchesClass = classList.some((c) => rule.selectorText.includes(c));
+        if (matchesClass) return align;
+      }
+    }
+  } catch {
+    // If stylesheet inspection fails for any reason, fall through to null
+    // rather than guessing from computed style.
+  }
+
+  return null;
+}
+
+// A small allow-list of generic font families we're happy to carry over.
+// Word/Google Docs font names come through mostly clean, but we still trim
+// and drop obviously broken values (empty strings, "inherit", etc).
+function cleanFontFamily(fontFamily: string | undefined): string | null {
+  if (!fontFamily) return null;
+  const first = fontFamily.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
+  if (!first) return null;
+  if (["inherit", "initial", "unset", "normal"].includes(first.toLowerCase())) return null;
+  return first;
+}
+
 /**
  * Sanitizes HTML pasted from Word/Google Docs down to plain, clean markup,
  * while preserving the formatting that actually matters: bold, italic,
  * underline, color, font family, font size, and paragraph alignment.
  *
- * The tricky part: Word doesn't put alignment directly on each <p> as an
- * inline style. It defines rules in a <style> block in the clipboard's
- * <head> (e.g. `p.MsoNormal { ... }` or a per-paragraph class with
- * `text-align: center`), and each <p> just references that class. A
- * detached <div> can't resolve CSS classes/stylesheets, so reading
- * `element.style` alone (inline styles only) misses anything Word
- * expressed through its stylesheet rather than inline.
+ * Word doesn't put alignment (or sometimes color) directly on each <p> as
+ * an inline style — it defines rules in a <style> block in the clipboard's
+ * <head> (e.g. `p.MsoNormal { ... }`) and each <p> just references that
+ * class. A detached <div> can't resolve CSS classes/stylesheets, so we
+ * load the *entire* clipboard HTML (head, style block, and all) into a
+ * hidden <iframe> that's actually attached to the document, so the
+ * browser parses and applies Word's <style> rules like any other page.
  *
- * To resolve this correctly, we load the *entire* clipboard HTML (head,
- * style block, and all) into a hidden <iframe> that's actually attached to
- * the document. Once attached, the browser parses and applies Word's
- * <style> rules like any other page, so `getComputedStyle()` on each
- * paragraph gives us the real, resolved alignment/formatting — regardless
- * of whether Word expressed it inline or via a class. We then rebuild a
- * clean, minimal HTML tree from those computed values and discard
- * everything else (the mso-* markup, the style block itself, Word's
- * classes, XML namespaces, etc.).
+ * IMPORTANT: we do NOT blindly trust getComputedStyle() for color or
+ * alignment, because computed style always resolves to *some* value (e.g.
+ * "left" or "rgb(0,0,0)") even when nothing was ever explicitly set —
+ * that was the source of two bugs: default-black text overriding the
+ * site's default ivory color, and default-left computed alignment
+ * overriding the page's own default/RTL behavior. See
+ * getExplicitTextAlign() and isEffectivelyDefaultBlack() above.
  */
 function sanitizePastedHtml(dirtyHtml: string): string {
   const iframe = document.createElement("iframe");
@@ -61,11 +136,6 @@ function sanitizePastedHtml(dirtyHtml: string): string {
       if (node.nodeType !== Node.ELEMENT_NODE) return null;
       const el = node as HTMLElement;
 
-      // Word wraps content in <o:p> (empty paragraph markers) and various
-      // XML-namespaced tags — skip anything not a real HTML element we
-      // recognize, but still walk into it in case it wraps real content.
-      const computed = iframeDoc.defaultView?.getComputedStyle(el);
-
       const isBlock = el.tagName === "P" || el.tagName === "DIV";
       const isInlineFormatting = ["STRONG", "B", "EM", "I", "U", "SPAN"].includes(
         el.tagName
@@ -75,10 +145,10 @@ function sanitizePastedHtml(dirtyHtml: string): string {
         const p = document.createElement("p");
         const declarations: string[] = [];
 
-        const textAlign = computed?.textAlign;
-        if (textAlign && ["left", "right", "center", "justify"].includes(textAlign)) {
-          declarations.push(`text-align: ${textAlign}`);
-        }
+        // Only carry alignment over if it was explicitly authored —
+        // never fall back to whatever the browser's default resolves to.
+        const explicitAlign = getExplicitTextAlign(el, iframeDoc);
+        if (explicitAlign) declarations.push(`text-align: ${explicitAlign}`);
 
         if (declarations.length > 0) p.setAttribute("style", declarations.join("; "));
 
@@ -94,6 +164,7 @@ function sanitizePastedHtml(dirtyHtml: string): string {
 
       if (isInlineFormatting || el.tagName === "SPAN") {
         const declarations: string[] = [];
+        const computed = iframeDoc.defaultView?.getComputedStyle(el);
 
         if (computed) {
           const weight = parseInt(computed.fontWeight || "400", 10);
@@ -105,10 +176,19 @@ function sanitizePastedHtml(dirtyHtml: string): string {
             declarations.push("text-decoration: underline");
           }
 
-          if (computed.color) declarations.push(`color: ${computed.color}`);
+          // Only carry color over if it isn't just Word's default
+          // near-black body text — otherwise it overrides the site's
+          // default (ivory) color and makes text unreadable on a dark
+          // background.
+          if (computed.color && !isEffectivelyDefaultBlack(computed.color)) {
+            declarations.push(`color: ${computed.color}`);
+          }
 
           const fontSizePx = parseFloat(computed.fontSize || "0");
           if (fontSizePx > 0) declarations.push(`font-size: ${Math.round(fontSizePx)}px`);
+
+          const fontFamily = cleanFontFamily(computed.fontFamily);
+          if (fontFamily) declarations.push(`font-family: '${fontFamily}'`);
         }
 
         const span = document.createElement("span");
